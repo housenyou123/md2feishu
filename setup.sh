@@ -144,15 +144,22 @@ echo ""
 echo "[4/5] 安装 Skill 文件..."
 mkdir -p "$SKILL_DIR"
 
-# Copy files from the script's directory
+# Try local files first, then download from GitHub
+REPO_URL="https://raw.githubusercontent.com/housenyou123/md2feishu/main"
+
 if [ -f "$SCRIPT_DIR/md2feishu.mjs" ]; then
   cp "$SCRIPT_DIR/md2feishu.mjs" "$SKILL_DIR/md2feishu.mjs"
   cp "$SCRIPT_DIR/SKILL.md" "$SKILL_DIR/SKILL.md"
-  echo "✅ 文件已安装到 $SKILL_DIR"
 else
-  echo "❌ 未找到 md2feishu.mjs，请确保 setup.sh 与 md2feishu.mjs 在同一目录"
-  exit 1
+  echo "   从 GitHub 下载文件..."
+  curl -sL "$REPO_URL/md2feishu.mjs" -o "$SKILL_DIR/md2feishu.mjs"
+  curl -sL "$REPO_URL/SKILL.md" -o "$SKILL_DIR/SKILL.md"
+  if [ ! -s "$SKILL_DIR/md2feishu.mjs" ]; then
+    echo "❌ 下载失败，请检查网络连接"
+    exit 1
+  fi
 fi
+echo "✅ 文件已安装到 $SKILL_DIR"
 
 # ─── Step 5: Smoke test ──────────────────────────────────────────
 echo ""
