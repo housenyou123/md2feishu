@@ -161,6 +161,16 @@ else
 fi
 echo "✅ 文件已安装到 $SKILL_DIR"
 
+# Register global CLI command
+chmod +x "$SKILL_DIR/md2feishu.mjs"
+mkdir -p "$HOME/.local/bin"
+ln -sf "$SKILL_DIR/md2feishu.mjs" "$HOME/.local/bin/md2feishu"
+if ! echo "$PATH" | tr ':' '\n' | grep -q ".local/bin"; then
+  echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.zshrc" 2>/dev/null || echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.bashrc"
+  echo "   已添加 ~/.local/bin 到 PATH（重启终端生效）"
+fi
+echo "✅ 全局命令 md2feishu 已注册"
+
 # ─── Step 5: Smoke test ──────────────────────────────────────────
 echo ""
 echo "[5/5] 运行验证测试..."
