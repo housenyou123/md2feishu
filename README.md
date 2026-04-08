@@ -8,12 +8,12 @@
 git clone https://github.com/housenyou123/md2feishu.git && cd md2feishu && bash setup.sh
 ```
 
-安装脚本会自动完成：Node.js 检查 → 飞书凭据配置（交互式） → 文件安装 → 全局命令注册 → 端到端验证。
+安装脚本会引导你：Node.js 检查 → **输入你自己的飞书应用凭据** → 自动验证 → 文件安装 → 全局命令注册 → 端到端验证。
 
 ### 前提
 
 - **Node.js 18+**（安装脚本会检查，macOS 自动 brew install）
-- **飞书企业自建应用**（安装时引导创建，需 5 个 API 权限）
+- **你自己的飞书企业自建应用**（安装时引导创建，需 5 个 API 权限）
 - **不需要 VPN** — 所有 API 调用走 `open.feishu.cn`
 
 ## 使用
@@ -30,6 +30,16 @@ md2feishu ./report.md --folder fldcnXXX
 
 ```
 /md2feishu ~/path/to/file.md
+```
+
+### 管理凭据
+
+```bash
+# 查看当前配置（自动验证是否有效）
+md2feishu config
+
+# 更换飞书应用凭据
+md2feishu config --id cli_xxx --secret your_secret
 ```
 
 ## 支持的 Markdown 格式

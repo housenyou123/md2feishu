@@ -53,29 +53,24 @@ echo ""
 echo "[3/5] 配置飞书应用凭据..."
 echo ""
 
-# Check if already configured
-EXISTING_ID=""
-if [ -f "$MCP_JSON" ]; then
-  EXISTING_ID=$(node -e "
-    try {
-      const c = require('$MCP_JSON');
-      const a = c.mcpServers?.['lark-mcp']?.args || [];
-      const i = a.indexOf('-a');
-      if (i >= 0) console.log(a[i+1]);
-    } catch {}
-  " 2>/dev/null || true)
-fi
+# Helper: validate credentials via API
+validate_creds() {
+  local id="$1" secret="$2"
+  node -e "
+    fetch('https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({app_id: process.argv[1], app_secret: process.argv[2]})
+    }).then(r=>r.json()).then(d=>{
+      if(d.code===0) console.log('OK');
+      else console.log('FAIL:'+d.msg);
+    }).catch(e=>console.log('FAIL:'+e.message));
+  " "$id" "$secret" 2>/dev/null
+}
 
-if [ -n "$EXISTING_ID" ]; then
-  echo "已有飞书应用配置: $EXISTING_ID"
-  read -p "是否使用现有配置？[Y/n] " USE_EXISTING
-  if [[ "$USE_EXISTING" =~ ^[Nn] ]]; then
-    EXISTING_ID=""
-  fi
-fi
-
-if [ -z "$EXISTING_ID" ]; then
-  echo "请先在飞书开发者后台创建企业自建应用:"
+# Helper: prompt user to input new credentials
+input_credentials() {
+  echo "请先在飞书开发者后台创建你自己的企业自建应用:"
   echo "  https://open.feishu.cn/app"
   echo ""
   echo "需要开通的权限（在应用的「权限管理」中搜索添加）:"
@@ -88,32 +83,21 @@ if [ -z "$EXISTING_ID" ]; then
   echo "添加权限后，需要在「版本管理与发布」中创建版本并发布（管理员审批）"
   echo ""
 
-  read -p "请输入 App ID (格式 cli_xxx): " APP_ID
+  read -p "请输入你的 App ID (格式 cli_xxx): " APP_ID
   if [[ ! "$APP_ID" =~ ^cli_ ]]; then
     echo "❌ App ID 格式不正确，应以 cli_ 开头"
     exit 1
   fi
 
-  read -p "请输入 App Secret: " APP_SECRET
+  read -p "请输入你的 App Secret: " APP_SECRET
   if [ -z "$APP_SECRET" ]; then
     echo "❌ App Secret 不能为空"
     exit 1
   fi
 
-  # Validate credentials
   echo ""
   echo "验证凭据..."
-  VALIDATE=$(node -e "
-    fetch('https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({app_id:'$APP_ID',app_secret:'$APP_SECRET'})
-    }).then(r=>r.json()).then(d=>{
-      if(d.code===0) console.log('OK');
-      else console.log('FAIL:'+d.msg);
-    }).catch(e=>console.log('FAIL:'+e.message));
-  " 2>/dev/null)
-
+  VALIDATE=$(validate_creds "$APP_ID" "$APP_SECRET")
   if [ "$VALIDATE" != "OK" ]; then
     echo "❌ 凭据验证失败: $VALIDATE"
     echo "   请检查 App ID 和 App Secret 是否正确"
@@ -121,22 +105,79 @@ if [ -z "$EXISTING_ID" ]; then
   fi
   echo "✅ 凭据验证通过"
 
-  # Write to mcp.json (merge with existing)
+  write_credentials "$APP_ID" "$APP_SECRET"
+}
+
+# Helper: write credentials to mcp.json
+write_credentials() {
+  local id="$1" secret="$2"
   node -e "
     const fs = require('fs');
-    const path = '$MCP_JSON';
+    const p = process.argv[1];
     let config = {};
-    try { config = JSON.parse(fs.readFileSync(path, 'utf8')); } catch {}
+    try { config = JSON.parse(fs.readFileSync(p, 'utf8')); } catch {}
     if (!config.mcpServers) config.mcpServers = {};
     config.mcpServers['lark-mcp'] = {
       command: 'echo',
-      args: ['-a', '$APP_ID', '-s', '$APP_SECRET']
+      args: ['-a', process.argv[2], '-s', process.argv[3]]
     };
-    fs.writeFileSync(path, JSON.stringify(config, null, 2));
-  "
+    fs.writeFileSync(p, JSON.stringify(config, null, 2));
+  " "$MCP_JSON" "$id" "$secret"
   echo "✅ 凭据已写入 $MCP_JSON"
+}
+
+# Check if already configured
+EXISTING_ID=""
+EXISTING_SECRET=""
+if [ -f "$MCP_JSON" ]; then
+  EXISTING_ID=$(node -e "
+    try {
+      const c = require('$MCP_JSON');
+      const a = c.mcpServers?.['lark-mcp']?.args || [];
+      const i = a.indexOf('-a');
+      if (i >= 0) console.log(a[i+1]);
+    } catch {}
+  " 2>/dev/null || true)
+  EXISTING_SECRET=$(node -e "
+    try {
+      const c = require('$MCP_JSON');
+      const a = c.mcpServers?.['lark-mcp']?.args || [];
+      const i = a.indexOf('-s');
+      if (i >= 0) console.log(a[i+1]);
+    } catch {}
+  " 2>/dev/null || true)
+fi
+
+if [ -n "$EXISTING_ID" ] && [ -n "$EXISTING_SECRET" ]; then
+  SECRET_PREVIEW="${EXISTING_SECRET:0:4}***"
+  echo "检测到已有配置:"
+  echo "  App ID:     $EXISTING_ID"
+  echo "  App Secret: $SECRET_PREVIEW"
+  echo ""
+  echo "验证已有凭据..."
+  VALIDATE=$(validate_creds "$EXISTING_ID" "$EXISTING_SECRET")
+  if [ "$VALIDATE" = "OK" ]; then
+    echo "✅ 已有凭据有效"
+    echo ""
+    read -p "是否继续使用此配置？[Y/n] " USE_EXISTING
+    if [[ "$USE_EXISTING" =~ ^[Nn] ]]; then
+      echo ""
+      echo "请输入你自己的飞书应用凭据："
+      echo ""
+      input_credentials
+    else
+      echo "✅ 使用已有飞书配置"
+    fi
+  else
+    echo "⚠️  已有凭据已失效: $VALIDATE"
+    echo "请重新输入你的飞书应用凭据："
+    echo ""
+    input_credentials
+  fi
 else
-  echo "✅ 使用现有飞书配置"
+  echo "未检测到飞书应用配置，请输入你的飞书应用凭据。"
+  echo ""
+  input_credentials
 fi
 
 # ─── Step 4: Install skill files ─────────────────────────────────

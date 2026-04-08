@@ -612,7 +612,75 @@ async function createViaTenant(appId, appSecret, mdContent, title, folderToken) 
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// Main
+// Config command
+// ═══════════════════════════════════════════════════════════════════
+
+async function handleConfig(args) {
+  const mcpPath = join(homedir(), '.claude/mcp.json');
+
+  // config --id cli_xxx --secret xxx → update credentials
+  let newId = null, newSecret = null;
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--id' && args[i + 1]) newId = args[++i];
+    else if (args[i] === '--secret' && args[i + 1]) newSecret = args[++i];
+  }
+
+  if (newId || newSecret) {
+    if (!newId || !newSecret) {
+      console.error('Error: --id and --secret must both be provided');
+      process.exit(1);
+    }
+    if (!newId.startsWith('cli_')) {
+      console.error('Error: App ID should start with cli_');
+      process.exit(1);
+    }
+
+    // Validate
+    console.log('验证凭据...');
+    try {
+      await getTenantToken(newId, newSecret);
+    } catch (e) {
+      console.error(`❌ 凭据验证失败: ${e.message}`);
+      process.exit(1);
+    }
+    console.log('✅ 凭据有效');
+
+    // Write
+    let config = {};
+    try { config = JSON.parse(readFileSync(mcpPath, 'utf8')); } catch {}
+    if (!config.mcpServers) config.mcpServers = {};
+    config.mcpServers['lark-mcp'] = { command: 'echo', args: ['-a', newId, '-s', newSecret] };
+    writeFileSync(mcpPath, JSON.stringify(config, null, 2));
+    console.log(`✅ 凭据已更新: ${newId}`);
+    return;
+  }
+
+  // config (no args) → show current
+  try {
+    const { appId, appSecret } = getCredentials();
+    const secretPreview = appSecret.slice(0, 4) + '***';
+    console.log(`当前飞书应用配置:`);
+    console.log(`  App ID:     ${appId}`);
+    console.log(`  App Secret: ${secretPreview}`);
+    console.log(`  来源:       ${process.env.FEISHU_APP_ID ? '环境变量' : mcpPath}`);
+
+    // Validate
+    try {
+      await getTenantToken(appId, appSecret);
+      console.log(`  状态:       ✅ 有效`);
+    } catch {
+      console.log(`  状态:       ❌ 已失效（请用 config --id --secret 更新）`);
+    }
+  } catch {
+    console.log('未配置飞书应用凭据。');
+    console.log('');
+    console.log('使用方式:');
+    console.log('  node md2feishu.mjs config --id cli_xxx --secret your_secret');
+    console.log('');
+    console.log('或运行安装脚本: bash setup.sh');
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════
 
 async function main() {
@@ -626,6 +694,8 @@ md2feishu — Markdown 转飞书文档
 Commands:
   login              OAuth 登录（获取用户令牌，支持富文本排版）
   login <code>       用授权码换取令牌
+  config             查看当前飞书应用配置
+  config --id cli_xxx --secret xxx  更新凭据
   <file.md> [opts]   转换文件
 
 Options:
@@ -643,6 +713,12 @@ Modes:
   // Login command
   if (args[0] === 'login') {
     await handleLogin(args.slice(1));
+    return;
+  }
+
+  // Config command
+  if (args[0] === 'config') {
+    await handleConfig(args.slice(1));
     return;
   }
 
